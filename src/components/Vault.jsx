@@ -523,6 +523,26 @@ function Vault({ onOpenAsset, onSendToTasks }) {
 
   const removeUploadFile = (index) => setUploadFiles(prev => prev.filter((_, i) => i !== index));
 
+  // Har nakaami JSON me nahi aati. Jab file had se bari ho to use rokne wala
+  // nginx hai, PHP tak baat pahunchti hi nahi — aur wo HTML ka error safha
+  // bhejta hai. Us par res.json() phat jata hai, aur designer ko
+  // "Unexpected token '<'" dikhta tha: aisi baat jis se na wajah pata chalti
+  // hai na hal. Isliye pehle padho, phir samjho.
+  const uploadError = async (res, file) => {
+    const raw = await res.text().catch(() => '');
+    try {
+      const data = JSON.parse(raw);
+      const said = data.message || data.detail || data.error;
+      if (said) return said;
+    } catch { /* JSON nahi hai — neeche khud bata dete hain */ }
+    const mb = (file.size / 1048576).toFixed(1);
+    if (res.status === 413) return `too large (${mb} MB) — the upload limit is 100 MB`;
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      return 'the artwork service is not answering right now — try again in a minute';
+    }
+    return `upload failed (${res.status})`;
+  };
+
   const handleUpload = async () => {
     if (!uploadFiles.length || !apiBase) return;
     if (!customer) { setUploadMessage('Please select a customer first'); return; }
@@ -540,11 +560,9 @@ function Vault({ onOpenAsset, onSendToTasks }) {
         if (needsAttach && attachTo) formData.append('attach_to', attachTo);
         const res = await fetch(`${apiBase}/central-artwork.php?action=upload`, {
           method: 'POST',
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}` },
           body: formData,
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.message || data.detail || data.error || 'Upload failed');
+        if (!res.ok) throw new Error(await uploadError(res, file));
         ok += 1;
       } catch (err) {
         failures.push(`${file.name}: ${err.message || 'failed'}`);
