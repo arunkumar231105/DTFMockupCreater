@@ -61,6 +61,9 @@ function App() {
   const [studioToken, setStudioToken] = useState(null);
   const [studioFileName, setStudioFileName] = useState('artwork.png');
   const [studioSaving, setStudioSaving] = useState(false);
+  // PNG ya JPG. PNG default hai kyunke mockup aur gang sheet dono me shafaaf
+  // hissa kaam ka hota hai; JPG tab chahiye jab file chhoti chahiye.
+  const [saveFormat, setSaveFormat] = useState('png');
   const [studioMessage, setStudioMessage] = useState('');
 
   // Vault selection on its way to a new task, and the artwork a task is
@@ -255,6 +258,28 @@ function App() {
     return `studio-output.${ext}`;
   };
 
+  // Jo tool ne banaya wo hamesha PNG hota hai. Designer JPG maange to usay
+  // dobara likhna padta hai — aur JPG me shafaaf hissa hota hi nahi, isliye
+  // pehle safed bhara jata hai. Bina iske transparent artwork kaale daag ke
+  // saath save hoti, jo chhapai me pakdi jati, screen par nahi.
+  const asFormat = async (blob, format) => {
+    const wantPng = format !== 'jpg';
+    if (wantPng && blob.type === 'image/png') return blob;
+    if (!wantPng && blob.type === 'image/jpeg') return blob;
+
+    const bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d');
+    if (!wantPng) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close?.();
+    const out = await new Promise((resolve) => canvas.toBlob(
+      resolve, wantPng ? 'image/png' : 'image/jpeg', wantPng ? undefined : 0.95));
+    return out || blob;          // canvas ne mana kar diya to jo tha wahi bhej do
+  };
+
   const postSave = async (apiBase, kind, blob) => {
     const form = new FormData();
     form.append('token', studioToken);
@@ -270,7 +295,7 @@ function App() {
     const stage = SAVE_STAGES[currentPage];
     if (!stage || !studioToken || studioSaving) return;
     setStudioSaving(true);
-    setStudioMessage(`Saving ${stage.kind} to ${stage.folder}…`);
+    setStudioMessage(`Saving ${stage.kind} to ${stage.folder} as ${saveFormat.toUpperCase()}…`);
     try {
       const apiBase = await detectApiBase();
 
@@ -280,7 +305,7 @@ function App() {
         if (!sheets.length) throw new Error('Add artwork to the gang sheet first');
         const names = [];
         for (const blob of sheets) {
-          const saved = await postSave(apiBase, 'GS', blob);
+          const saved = await postSave(apiBase, 'GS', await asFormat(blob, saveFormat));
           setStudioToken(saved.studio_token);
           setStudioFileName(saved.file_name);
           names.push(saved.file_name);
@@ -299,8 +324,8 @@ function App() {
           ? 'Place an artwork on the garment first'
           : 'Open an artwork from the Vault first');
       }
-      const blob = source instanceof Blob ? source : await fetch(source).then(r => r.blob());
-      const saved = await postSave(apiBase, stage.kind, blob);
+      const raw = source instanceof Blob ? source : await fetch(source).then(r => r.blob());
+      const saved = await postSave(apiBase, stage.kind, await asFormat(raw, saveFormat));
       setStudioToken(saved.studio_token);
       setStudioFileName(saved.file_name);
       setStudioMessage(`Saved: ${saved.file_name}`);
@@ -1029,8 +1054,23 @@ function App() {
         {studioToken && SAVE_STAGES[currentPage] && (
           <div style={{position:'fixed',right:24,bottom:24,zIndex:50,display:'flex',alignItems:'center',gap:10,background:'#fff',padding:'10px 12px',borderRadius:10,boxShadow:'0 8px 30px rgba(15,23,42,.18)'}}>
             {studioMessage && <span style={{fontSize:12,color:'#475569',maxWidth:360}}>{studioMessage}</span>}
+            {/* Kis shakl me save karni hai. Save se PEHLE chunna padta hai,
+                isliye button ke saath hi rakha hai, kisi menu me chhupa nahi. */}
+            <div style={{display:'flex',gap:2,padding:2,background:'#f1f5f9',borderRadius:8}} role="group" aria-label="Save format">
+              {['png','jpg'].map((f) => (
+                <button key={f} onClick={() => setSaveFormat(f)} disabled={studioSaving}
+                  aria-pressed={saveFormat === f}
+                  style={{border:'none',cursor:'pointer',borderRadius:6,padding:'5px 11px',
+                    fontSize:12,fontWeight:600,letterSpacing:'.02em',
+                    background:saveFormat===f?'#fff':'transparent',
+                    color:saveFormat===f?'#0f172a':'#64748b',
+                    boxShadow:saveFormat===f?'0 1px 3px rgba(15,23,42,.12)':'none'}}>
+                  {f.toUpperCase()}
+                </button>
+              ))}
+            </div>
             <button onClick={saveStudioOutput} disabled={studioSaving} className="btn-primary">
-              {studioSaving ? 'Saving…' : SAVE_STAGES[currentPage].label}
+              {studioSaving ? 'Saving…' : `${SAVE_STAGES[currentPage].label} (${saveFormat.toUpperCase()})`}
             </button>
           </div>
         )}
