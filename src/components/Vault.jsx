@@ -14,6 +14,14 @@ import './Vault.css';
 
 const REVISION_POLL_MS = 3000;
 const PAGE_SIZE = 60;
+// Designer apni pasand ki view chunta hai aur wahi agli baar bhi mile.
+const VIEW_KEY = 'dsVaultView';
+
+// Panel me tasveer badi chahiye, thumbnail nahi. Server hi resize karke deta hai,
+// isliye 60 MB ki PSD ka asal file browser tak aata hi nahi. Naap tay hai taaki
+// har file ke liye ek hi cached copy bane.
+const PREVIEW_W = 1400;
+const PREVIEW_H = 1400;
 
 // Where a selected file can be sent. These mirror the studio's own pages.
 const TARGETS = [
@@ -167,6 +175,66 @@ function VaultCard({ asset, apiBase, selected, onSelect }) {
   );
 }
 
+// Wahi file, ek line me. Card me tasveer bari dikhti hai; list me ek nazar me
+// yeh dikhta hai ke file kis customer ki hai, kis folder me hai aur kab badli —
+// jo card ki tang jagah me nahi aa sakta tha.
+function VaultRow({ asset, apiBase, selected, onSelect }) {
+  const [failed, setFailed] = useState(false);
+  const life = LIFECYCLE[asset.lifecycle_code] || null;
+  const previewable = isPreviewable(asset) && !failed;
+  const src = `${apiBase}/central-artwork.php?action=thumb&id=${encodeURIComponent(asset.id)}&w=120&h=120&v=${encodeURIComponent(asset.preview_key || '')}`;
+
+  return (
+    <button type="button" className={`vault-row ${selected ? 'selected' : ''}`} onClick={() => onSelect(asset)}>
+      <span className="vault-row-thumb">
+        {previewable
+          ? <img src={src} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} />
+          : <span className="vault-row-ext">{(asset.file_name.split('.').pop() || 'FILE').toUpperCase()}</span>}
+        {selected && <span className="vault-row-check">✓</span>}
+      </span>
+      <span className="vault-row-name">
+        <strong title={asset.file_name}>{asset.file_name}</strong>
+        {asset.artwork_code && <small>{asset.artwork_code}</small>}
+      </span>
+      <span className="vault-row-cell vault-row-entity">{asset.entity_name || 'Unlinked'}</span>
+      <span className="vault-row-cell">{asset.folder || '—'}</span>
+      <span className="vault-row-cell">
+        {life
+          ? <span className={`vault-life vault-life-${life.tone} is-inline`}>{asset.lifecycle_code}</span>
+          : '—'}
+      </span>
+      <span className="vault-row-cell vault-row-num">{fileSize(asset.file_size_bytes)}</span>
+      <span className="vault-row-cell vault-row-num">{formatDate(asset.source_modified_at)}</span>
+    </button>
+  );
+}
+
+// Panel ki badi tasveer. Jo file tasveer nahi hai (PSD, AI, PDF) uske liye
+// khaali daba dikhane ka koi faida nahi — uski qisam saaf likh di jaati hai.
+function PreviewStage({ asset, apiBase }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [asset.id]);
+  const previewable = isPreviewable(asset) && !failed;
+  const src = `${apiBase}/central-artwork.php?action=thumb&id=${encodeURIComponent(asset.id)}&w=${PREVIEW_W}&h=${PREVIEW_H}&v=${encodeURIComponent(asset.preview_key || '')}`;
+  if (!previewable) {
+    return (
+      <div className="vault-preview-stage is-file">
+        <strong>{(asset.file_name.split('.').pop() || 'FILE').toUpperCase()}</strong>
+        <span>No preview for this file type — open it in a studio tool below.</span>
+      </div>
+    );
+  }
+  return (
+    <div className="vault-preview-stage">
+      <img src={src} alt={asset.file_name} onError={() => setFailed(true)} />
+    </div>
+  );
+}
+
+function PreviewRow({ label, value }) {
+  return <div className="vault-preview-row"><span>{label}</span><strong title={typeof value === 'string' ? value : undefined}>{value || '—'}</strong></div>;
+}
+
 function Vault({ onOpenAsset, onSendToTasks }) {
   const [apiBase, setApiBase] = useState(null);
   const [rows, setRows] = useState([]);
@@ -185,6 +253,15 @@ function Vault({ onOpenAsset, onSendToTasks }) {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
+  // Cards ya list. Private window me localStorage rok deta hai, isliye har
+  // padhne-likhne ko try me rakha hai — warna poora page hi nahi khulega.
+  const [view, setView] = useState(() => {
+    try { return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'cards'; } catch { return 'cards'; }
+  });
+  const chooseView = (next) => {
+    setView(next);
+    try { localStorage.setItem(VIEW_KEY, next); } catch { /* is baar ke liye phir bhi chalega */ }
+  };
   // A studio tool opens one file, but a task is often a whole set — so the grid
   // keeps a selection and the action bar offers the tools only when it holds
   // exactly one file.
@@ -208,6 +285,14 @@ function Vault({ onOpenAsset, onSendToTasks }) {
   const [pieceSearch, setPieceSearch] = useState('');
   const needsAttach = ATTACH_TYPES.has(uploadLifecycle);
   const attachedPiece = pieces.find(p => p.id === attachTo) || null;
+
+  // Escape se panel band — panel selection par khulta hai, isliye selection hi hatti hai.
+  useEffect(() => {
+    if (selection.length !== 1) return undefined;
+    const onKey = (event) => { if (event.key === 'Escape') { setSelection([]); setStatus(''); } };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selection.length]);
 
   const revisionRef = useRef('');
   const inFlight = useRef(false);
@@ -364,21 +449,10 @@ function Vault({ onOpenAsset, onSendToTasks }) {
     }
   };
 
-  const download = async (asset) => {
-    if (!apiBase) return;
-    try {
-      const res = await fetch(`${apiBase}/central-artwork.php?action=content&id=${encodeURIComponent(asset.id)}`);
-      if (!res.ok) throw new Error('Download failed');
-      const url = URL.createObjectURL(await res.blob());
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = asset.file_name;
-      link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 30000);
-    } catch (err) {
-      setError(err.message || 'Download failed');
-    }
-  };
+  // File ka seedha pata. Isse <a download> banta hai — JS se shuru kiya gaya
+  // download Chrome rok deta hai, asli link par kiya gaya click kabhi nahi.
+  const downloadHref = (asset) =>
+    `${apiBase}/central-artwork.php?action=content&id=${encodeURIComponent(asset.id)}`;
 
   const selectRoot = (next) => {
     setRoot(next); setCustomer(''); setFolder(''); setSelection([]); setPage(1);
@@ -493,7 +567,7 @@ function Vault({ onOpenAsset, onSendToTasks }) {
   const rootTotal = facets.roots.reduce((sum, item) => sum + item.files, 0);
 
   return (
-    <div className="vault-page">
+    <div className={`vault-page ${selected ? 'has-preview' : ''}`}>
       <header className="vault-header">
         <div>
           <h1 className="vault-title">Artwork Vault</h1>
@@ -553,6 +627,10 @@ function Vault({ onOpenAsset, onSendToTasks }) {
           ))}
         </select>
         {activeFilters && <button type="button" className="vault-btn vault-btn-ghost" onClick={resetFilters}>Clear</button>}
+        <div className="vault-viewtoggle" role="group" aria-label="View">
+          <button type="button" className={view === 'cards' ? 'active' : ''} aria-pressed={view === 'cards'} onClick={() => chooseView('cards')}>▦ Cards</button>
+          <button type="button" className={view === 'list' ? 'active' : ''} aria-pressed={view === 'list'} onClick={() => chooseView('list')}>☰ List</button>
+        </div>
       </div>
 
       <div className="vault-tabs">
@@ -592,17 +670,35 @@ function Vault({ onOpenAsset, onSendToTasks }) {
 
       {rows.length > 0 && (
         <>
-          <div className="vault-grid">
-            {rows.map(asset => (
-              <VaultCard
-                key={asset.id}
-                asset={asset}
-                apiBase={apiBase}
-                selected={selection.some(a => a.id === asset.id)}
-                onSelect={(next) => { toggleSelected(next); setStatus(''); }}
-              />
-            ))}
-          </div>
+          {view === 'cards' ? (
+            <div className="vault-grid">
+              {rows.map(asset => (
+                <VaultCard
+                  key={asset.id}
+                  asset={asset}
+                  apiBase={apiBase}
+                  selected={selection.some(a => a.id === asset.id)}
+                  onSelect={(next) => { toggleSelected(next); setStatus(''); }}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="vault-list">
+              <div className="vault-list-head" aria-hidden="true">
+                <span /><span>File</span><span>Lead / Customer</span><span>Folder</span><span>Stage</span>
+                <span className="vault-row-num">Size</span><span className="vault-row-num">Modified</span>
+              </div>
+              {rows.map(asset => (
+                <VaultRow
+                  key={asset.id}
+                  asset={asset}
+                  apiBase={apiBase}
+                  selected={selection.some(a => a.id === asset.id)}
+                  onSelect={(next) => { toggleSelected(next); setStatus(''); }}
+                />
+              ))}
+            </div>
+          )}
 
           <div className="vault-pager">
             <button type="button" className="vault-btn vault-btn-ghost" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>← Previous</button>
@@ -615,60 +711,97 @@ function Vault({ onOpenAsset, onSendToTasks }) {
         </>
       )}
 
-      {selection.length > 0 && (
+      {/* Ek file chuni = uska apna panel (badi tasveer + uske saare buttons).
+          Kai files chuni = neeche wali patti, jahan wahi kaam hain jo poore set
+          par chal sakte hain. Dono ek saath kabhi nahi — warna ek hi button do
+          jagah dikhta aur samajh nahi aata ke kaunsa kis par chalega. */}
+      {selected && (
+        <aside className="vault-preview" aria-label="Artwork preview">
+          <header className="vault-preview-head">
+            <div>
+              <strong title={selected.file_name}>{selected.file_name}</strong>
+              <span>{selected.entity_name || 'Unlinked'}</span>
+            </div>
+            <button type="button" className="vault-preview-close" aria-label="Close preview" onClick={() => { setSelection([]); setStatus(''); }}>×</button>
+          </header>
+
+          <div className="vault-preview-scroll">
+            <PreviewStage asset={selected} apiBase={apiBase} />
+
+            <div className="vault-preview-meta">
+              <PreviewRow label="Folder" value={selected.folder} />
+              <PreviewRow label="Stage" value={LIFECYCLE[selected.lifecycle_code]?.label || selected.lifecycle_code} />
+              <PreviewRow label="Artwork code" value={selected.artwork_code} />
+              <PreviewRow label="Size" value={fileSize(selected.file_size_bytes)} />
+              <PreviewRow label="Modified" value={formatDate(selected.source_modified_at)} />
+            </div>
+
+            <div className="vault-preview-actions">
+              <h3>Open in</h3>
+              <div className="vault-preview-btns">
+                {TARGETS.map(target => (
+                  <button
+                    key={target.page}
+                    type="button"
+                    className={`vault-btn ${target.primary ? 'vault-btn-primary' : ''}`}
+                    disabled={Boolean(opening)}
+                    onClick={() => openIn(target)}
+                  >
+                    {opening === target.page ? 'Opening…' : target.label}
+                  </button>
+                ))}
+              </div>
+              <h3>File</h3>
+              <div className="vault-preview-btns">
+                <a className="vault-btn" href={downloadHref(selected)} download={selected.file_name}>Download</a>
+                {onSendToTasks && (
+                  <button
+                    type="button"
+                    className="vault-btn vault-btn-task"
+                    onClick={() => { onSendToTasks(selection); setSelection([]); setStatus(''); }}
+                  >
+                    Send to Task Management
+                  </button>
+                )}
+                <button type="button" className="vault-btn vault-btn-danger" disabled={trashing} onClick={trashSelection}>
+                  {trashing ? 'Moving…' : '🗑 Trash'}
+                </button>
+              </div>
+            </div>
+
+            {status && <div className="vault-preview-status">{status}</div>}
+          </div>
+        </aside>
+      )}
+
+      {selection.length > 1 && (
         <div className="vault-actionbar">
           <div className="vault-actionbar-file">
-            {selected ? (
-              <>
-                <strong title={selected.file_name}>{selected.file_name}</strong>
-                <span>
-                  {selected.entity_name || 'Unlinked'} · {selected.folder}
-                  {selected.artwork_code ? ` · ${selected.artwork_code}` : ''}
-                  {` · ${formatDate(selected.source_modified_at)}`}
-                </span>
-              </>
-            ) : (
-              <>
-                <strong>{selection.length} files selected</strong>
-                <span>{selection.slice(0, 3).map(a => a.file_name).join(', ')}{selection.length > 3 ? ` +${selection.length - 3} more` : ''}</span>
-              </>
-            )}
+            <strong>{selection.length} files selected</strong>
+            <span>{selection.slice(0, 3).map(a => a.file_name).join(', ')}{selection.length > 3 ? ` +${selection.length - 3} more` : ''}</span>
           </div>
           <div className="vault-actionbar-actions">
-            {/* The studio tools work on one file; the task hand-off takes the set. */}
-            {selected && TARGETS.map(target => (
-              <button
-                key={target.page}
-                type="button"
-                className={`vault-btn ${target.primary ? 'vault-btn-primary' : ''}`}
-                disabled={Boolean(opening)}
-                onClick={() => openIn(target)}
-              >
-                {opening === target.page ? 'Opening…' : target.label}
-              </button>
-            ))}
             {onSendToTasks && (
               <button
                 type="button"
                 className="vault-btn vault-btn-task"
                 onClick={() => { onSendToTasks(selection); setSelection([]); setStatus(''); }}
               >
-                Send to Task Management{selection.length > 1 ? ` (${selection.length})` : ''}
+                Send to Task Management ({selection.length})
               </button>
             )}
-            {selected && <button type="button" className="vault-btn" onClick={() => download(selected)}>Download</button>}
             <button
               type="button"
               className="vault-btn vault-btn-danger"
               disabled={trashing}
               onClick={trashSelection}
             >
-              {trashing ? 'Moving…' : `🗑 Trash${selection.length > 1 ? ` (${selection.length})` : ''}`}
+              {trashing ? 'Moving…' : `🗑 Trash (${selection.length})`}
             </button>
             <button type="button" className="vault-btn vault-btn-ghost" onClick={() => { setSelection([]); setStatus(''); }}>Clear</button>
           </div>
           {status && <div className="vault-actionbar-status">{status}</div>}
-          {!selected && <div className="vault-actionbar-status">Pick a single file to open it in a studio tool.</div>}
+          <div className="vault-actionbar-status">Pick a single file to open it in a studio tool.</div>
         </div>
       )}
 
