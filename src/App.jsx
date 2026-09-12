@@ -65,6 +65,18 @@ function App() {
   // hissa kaam ka hota hai; JPG tab chahiye jab file chhoti chahiye.
   const [saveFormat, setSaveFormat] = useState('png');
   const [studioMessage, setStudioMessage] = useState('');
+  // Ek mockup ya gang sheet apne aap me kuch nahi hai — wo kisi design ka
+  // marhala hai, aur naam usi design se aata hai (AW-<CODE>-<NNNN>-MU01).
+  // Jab kaam Vault se shuru hua ho to design pehle se maloom hota hai; warna
+  // save ke waqt poocha jata hai, kyunke us se pehle poochhne ka matlab hota
+  // har us designer ko rokna jo sirf kuch aazma raha hai.
+  const [pickOpen, setPickOpen] = useState(false);
+  const [pickCustomers, setPickCustomers] = useState([]);
+  const [pickCustomer, setPickCustomer] = useState('');
+  const [pickDesigns, setPickDesigns] = useState([]);
+  const [pickDesign, setPickDesign] = useState('');
+  const [pickFilter, setPickFilter] = useState('');
+  const [pickBusy, setPickBusy] = useState('');
 
   // Vault selection on its way to a new task, and the artwork a task is
   // currently checking back out of the vault into the editor.
@@ -280,9 +292,9 @@ function App() {
     return out || blob;          // canvas ne mana kar diya to jo tha wahi bhej do
   };
 
-  const postSave = async (apiBase, kind, blob) => {
+  const postSave = async (apiBase, kind, blob, token) => {
     const form = new FormData();
-    form.append('token', studioToken);
+    form.append('token', token || studioToken);
     form.append('kind', kind);
     form.append('file', new File([blob], uploadName(blob), { type: blob.type || 'image/png' }));
     const response = await fetch(`${apiBase}/central-artwork.php?action=save`, { method: 'POST', body: form });
@@ -291,9 +303,12 @@ function App() {
     return payload.data;
   };
 
-  const saveStudioOutput = async () => {
+  const saveStudioOutput = async (tokenOverride) => {
     const stage = SAVE_STAGES[currentPage];
-    if (!stage || !studioToken || studioSaving) return;
+    const token = tokenOverride || studioToken;
+    if (!stage || studioSaving) return;
+    // Kis design ka marhala hai — yehi ek cheez hai jo save ke liye laazmi hai.
+    if (!token) { openDesignPicker(); return; }
     setStudioSaving(true);
     setStudioMessage(`Saving ${stage.kind} to ${stage.folder} as ${saveFormat.toUpperCase()}…`);
     try {
@@ -305,7 +320,7 @@ function App() {
         if (!sheets.length) throw new Error('Add artwork to the gang sheet first');
         const names = [];
         for (const blob of sheets) {
-          const saved = await postSave(apiBase, 'GS', await asFormat(blob, saveFormat));
+          const saved = await postSave(apiBase, 'GS', await asFormat(blob, saveFormat), token);
           setStudioToken(saved.studio_token);
           setStudioFileName(saved.file_name);
           names.push(saved.file_name);
@@ -325,13 +340,54 @@ function App() {
           : 'Open an artwork from the Vault first');
       }
       const raw = source instanceof Blob ? source : await fetch(source).then(r => r.blob());
-      const saved = await postSave(apiBase, stage.kind, await asFormat(raw, saveFormat));
+      const saved = await postSave(apiBase, stage.kind, await asFormat(raw, saveFormat), token);
       setStudioToken(saved.studio_token);
       setStudioFileName(saved.file_name);
       setStudioMessage(`Saved: ${saved.file_name}`);
     } catch (error) {
       setStudioMessage(error.message || 'Save failed');
     } finally { setStudioSaving(false); }
+  };
+
+  // Customer ki list Vault wale hi raaste se — ek hi sach, do jagah nahi.
+  const openDesignPicker = async () => {
+    setPickOpen(true);
+    setPickBusy('customers');
+    try {
+      const apiBase = await detectApiBase();
+      const r = await fetch(`${apiBase}/central-artwork.php?action=facets`).then(x => x.json());
+      setPickCustomers(r.data?.customers || []);
+    } catch { setStudioMessage('Customer list could not be loaded'); }
+    finally { setPickBusy(''); }
+  };
+
+  const loadPickDesigns = async (key) => {
+    setPickCustomer(key); setPickDesign(''); setPickDesigns([]);
+    if (!key) return;
+    setPickBusy('designs');
+    try {
+      const apiBase = await detectApiBase();
+      const r = await fetch(`${apiBase}/central-artwork.php?action=pieces&entity_key=${encodeURIComponent(key)}`).then(x => x.json());
+      setPickDesigns(r.data?.rows || []);
+    } catch { setStudioMessage('Designs could not be loaded'); }
+    finally { setPickBusy(''); }
+  };
+
+  // Design chunte hi uska apna token liya jata hai, aur wahi token save ke saath
+  // jata hai — isi se PrintShop jaanta hai ke yeh kaam kis design ka hai.
+  const confirmDesign = async () => {
+    if (!pickDesign) return;
+    setPickBusy('opening');
+    try {
+      const apiBase = await detectApiBase();
+      const r = await fetch(`${apiBase}/central-artwork.php?action=handoff&id=${encodeURIComponent(pickDesign)}`).then(x => x.json());
+      const token = r.data?.token;
+      if (!token) throw new Error(r.message || 'Could not open that design');
+      setStudioToken(token);
+      setPickOpen(false);
+      await saveStudioOutput(token);
+    } catch (e) { setStudioMessage(e.message || 'Could not open that design'); }
+    finally { setPickBusy(''); }
   };
 
   // Restore session on mount
@@ -1051,7 +1107,7 @@ function App() {
         )}
         {/* The save bar belongs to the tool that produces the file — it used to
             follow the user onto every page, including User Management. */}
-        {studioToken && SAVE_STAGES[currentPage] && (
+        {SAVE_STAGES[currentPage] && (
           <div style={{position:'fixed',right:24,bottom:24,zIndex:50,display:'flex',alignItems:'center',gap:10,background:'#fff',padding:'10px 12px',borderRadius:10,boxShadow:'0 8px 30px rgba(15,23,42,.18)'}}>
             {studioMessage && <span style={{fontSize:12,color:'#475569',maxWidth:360}}>{studioMessage}</span>}
             {/* Kis shakl me save karni hai. Save se PEHLE chunna padta hai,
@@ -1069,9 +1125,54 @@ function App() {
                 </button>
               ))}
             </div>
-            <button onClick={saveStudioOutput} disabled={studioSaving} className="btn-primary">
+            <button onClick={() => saveStudioOutput()} disabled={studioSaving} className="btn-primary">
               {studioSaving ? 'Saving…' : `${SAVE_STAGES[currentPage].label} (${saveFormat.toUpperCase()})`}
             </button>
+          </div>
+        )}
+
+        {pickOpen && (
+          <div onClick={() => setPickOpen(false)}
+            style={{position:'fixed',inset:0,zIndex:60,background:'rgba(15,23,42,.5)',display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+            <div onClick={(e) => e.stopPropagation()}
+              style={{background:'#fff',borderRadius:12,width:'100%',maxWidth:460,boxShadow:'0 20px 60px rgba(0,0,0,.3)',overflow:'hidden'}}>
+              <div style={{padding:'14px 16px',borderBottom:'1px solid #e2e8f0'}}>
+                <strong style={{fontSize:14}}>Which design is this {SAVE_STAGES[currentPage]?.kind === 'GS' ? 'gang sheet' : 'mockup'} for?</strong>
+                <div style={{fontSize:12,color:'#64748b',marginTop:3}}>
+                  It is saved as that design&rsquo;s next {SAVE_STAGES[currentPage]?.kind}, keeping its number.
+                </div>
+              </div>
+              <div style={{padding:16,display:'flex',flexDirection:'column',gap:10}}>
+                <input value={pickFilter} onChange={(e) => setPickFilter(e.target.value)}
+                  placeholder={`Filter ${pickCustomers.length} customers…`}
+                  style={{padding:'8px 11px',border:'1px solid #cbd5e1',borderRadius:8,fontSize:13}} />
+                <select value={pickCustomer} onChange={(e) => loadPickDesigns(e.target.value)}
+                  style={{padding:'8px 11px',border:'1px solid #cbd5e1',borderRadius:8,fontSize:13}}>
+                  <option value="">{pickBusy === 'customers' ? 'Loading…' : 'Select a customer…'}</option>
+                  {pickCustomers
+                    .filter(c => !pickFilter.trim() || (c.name || '').toLowerCase().includes(pickFilter.trim().toLowerCase()))
+                    .slice(0, 400)
+                    .map(c => <option key={c.key} value={c.key}>{c.name}{c.files ? ` (${c.files})` : ''}</option>)}
+                </select>
+                {pickCustomer && (
+                  <select value={pickDesign} onChange={(e) => setPickDesign(e.target.value)}
+                    style={{padding:'8px 11px',border:'1px solid #cbd5e1',borderRadius:8,fontSize:13}}>
+                    <option value="">
+                      {pickBusy === 'designs' ? 'Loading…'
+                        : pickDesigns.length ? 'Select a design…'
+                        : 'This customer has no design yet'}
+                    </option>
+                    {pickDesigns.map(d => <option key={d.id} value={d.id}>{d.artwork_code} — {d.file_name}</option>)}
+                  </select>
+                )}
+              </div>
+              <div style={{padding:'12px 16px',borderTop:'1px solid #e2e8f0',display:'flex',justifyContent:'flex-end',gap:8}}>
+                <button onClick={() => setPickOpen(false)} className="btn-secondary">Cancel</button>
+                <button onClick={confirmDesign} disabled={!pickDesign || !!pickBusy} className="btn-primary">
+                  {pickBusy === 'opening' ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </main>
