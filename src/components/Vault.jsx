@@ -64,6 +64,15 @@ const LIFECYCLE = {
 
 const IMAGE_RE = /\.(png|jpe?g|webp|gif|bmp|tiff?|svg|avif)$/i;
 
+// The Artwork Generator is a separate app on this host. It has no TLS name yet,
+// so the address is plain http — worth giving it one, but nothing secret travels
+// in this link: the id names a row in PrintShop's index, and PrintShop will not
+// act on that id without a signed token the generator mints server-side.
+const GENERATOR_URL = 'http://31.97.110.197:4400';
+
+// What the generator will actually accept as input.
+const GENERATOR_RE = /\.(png|jpe?g|webp)$/i;
+
 function isPreviewable(asset) {
   return /^image\//i.test(asset.mime_type || '') || IMAGE_RE.test(asset.file_name || '');
 }
@@ -750,6 +759,26 @@ function Vault({ onOpenAsset, onSendToTasks }) {
                     {opening === target.page ? 'Opening…' : target.label}
                   </button>
                 ))}
+              </div>
+              <h3>Send to</h3>
+              <div className="vault-preview-btns">
+                {/* Leaves the app, so it opens in its own tab — a generation
+                    run is long, and losing the vault behind it helps nobody.
+                    Whatever comes back is saved as this design's next WRK
+                    version, in this customer's Artworks folder. */}
+                <a
+                  className={`vault-btn ${GENERATOR_RE.test(selected.file_name) ? '' : 'is-off'}`}
+                  href={GENERATOR_RE.test(selected.file_name)
+                    ? `${GENERATOR_URL}/?asset=${encodeURIComponent(selected.id)}&path=${encodeURIComponent(selected.path || '')}`
+                    : undefined}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={GENERATOR_RE.test(selected.file_name)
+                    ? 'Open this artwork in the Artwork Generator'
+                    : 'The generator takes .png .jpg .jpeg .webp'}
+                >
+                  Artwork Generator ↗
+                </a>
               </div>
               <h3>File</h3>
               <div className="vault-preview-btns">
