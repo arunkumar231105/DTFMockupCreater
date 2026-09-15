@@ -97,6 +97,27 @@ function blobToDataUrl(blob) {
   });
 }
 
+// Modified-date filter. Vault ki list pehle se nayi-se-purani hai; ye sirf us din/hafte
+// ki files dikhata hai. Server `from`/`to` (YYYY-MM-DD) ko file ke Nextcloud modified
+// time par lagata hai.
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const DATE_PRESETS = [
+  ['', 'Any date'], ['today', 'Today'], ['yesterday', 'Yesterday'], ['7d', 'Last 7 days'],
+  ['30d', 'Last 30 days'], ['month', 'This month'], ['custom', 'Custom range…'],
+];
+function presetRange(key) {
+  const now = new Date();
+  const back = (n) => { const d = new Date(now); d.setDate(d.getDate() - n); return ymd(d); };
+  switch (key) {
+    case 'today': return [ymd(now), ymd(now)];
+    case 'yesterday': return [back(1), back(1)];
+    case '7d': return [back(6), ymd(now)];
+    case '30d': return [back(29), ymd(now)];
+    case 'month': return [ymd(new Date(now.getFullYear(), now.getMonth(), 1)), ymd(now)];
+    default: return ['', ''];
+  }
+}
+
 // Lead Date & Time the way the CRM Leads page prints it.
 const fmtLeadTime = (ts) => ts
   ? new Date(Number(ts)).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Karachi' })
@@ -299,6 +320,9 @@ function Vault({ onOpenAsset, onSendToTasks }) {
   const [customer, setCustomer] = useState('');
   const [folder, setFolder] = useState('');
   const [lifecycle, setLifecycle] = useState('');
+  const [datePreset, setDatePreset] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -360,8 +384,10 @@ function Vault({ onOpenAsset, onSendToTasks }) {
     if (folder) params.set('folder', folder);
     if (lifecycle) params.set('lifecycle', lifecycle);
     if (debouncedSearch.trim()) params.set('search', debouncedSearch.trim());
+    if (dateFrom) params.set('from', dateFrom);
+    if (dateTo) params.set('to', dateTo);
     return params;
-  }, [root, customer, folder, lifecycle, debouncedSearch]);
+  }, [root, customer, folder, lifecycle, debouncedSearch, dateFrom, dateTo]);
 
   // Two things ask for a reload: a filter change and the live cursor. If one
   // arrives while the other is still fetching, remember it and run once more on
@@ -509,6 +535,14 @@ function Vault({ onOpenAsset, onSendToTasks }) {
 
   const resetFilters = () => {
     setRoot(''); setCustomer(''); setFolder(''); setLifecycle(''); setSearch(''); setDebouncedSearch(''); setPage(1);
+    setDatePreset(''); setDateFrom(''); setDateTo('');
+  };
+
+  // Preset chuna to tareekhein wahi se; "Custom range" par agent khud from/to chunta hai.
+  const chooseDatePreset = (key) => {
+    setDatePreset(key);
+    if (key !== 'custom') { const [f, t] = presetRange(key); setDateFrom(f); setDateTo(t); }
+    setPage(1);
   };
 
   // Load the customer's designs whenever an attaching type is picked. A design
@@ -630,7 +664,7 @@ function Vault({ onOpenAsset, onSendToTasks }) {
   };
 
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const activeFilters = Boolean(root || customer || folder || lifecycle || debouncedSearch.trim());
+  const activeFilters = Boolean(root || customer || folder || lifecycle || debouncedSearch.trim() || dateFrom || dateTo);
   const rootTotal = facets.roots.reduce((sum, item) => sum + item.files, 0);
 
   return (
@@ -693,6 +727,18 @@ function Vault({ onOpenAsset, onSendToTasks }) {
             </option>
           ))}
         </select>
+        <select className="vault-select" value={datePreset} onChange={(e) => chooseDatePreset(e.target.value)} aria-label="Modified date">
+          {DATE_PRESETS.map(([key, label]) => <option key={key || 'any'} value={key}>{label}</option>)}
+        </select>
+        {datePreset === 'custom' && (
+          <span className="vault-daterange">
+            <input type="date" className="vault-date" value={dateFrom} max={dateTo || undefined} aria-label="From date"
+              onChange={(e) => { setDateFrom(e.target.value); setPage(1); }} />
+            <span aria-hidden="true">–</span>
+            <input type="date" className="vault-date" value={dateTo} min={dateFrom || undefined} aria-label="To date"
+              onChange={(e) => { setDateTo(e.target.value); setPage(1); }} />
+          </span>
+        )}
         {activeFilters && <button type="button" className="vault-btn vault-btn-ghost" onClick={resetFilters}>Clear</button>}
         <div className="vault-viewtoggle" role="group" aria-label="View">
           <button type="button" className={view === 'cards' ? 'active' : ''} aria-pressed={view === 'cards'} onClick={() => chooseView('cards')}>▦ Cards</button>

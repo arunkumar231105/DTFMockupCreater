@@ -32,6 +32,10 @@
 .vault-search:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
 
 .vault-select { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: #fff; cursor: pointer; }
+/* Custom date range: two native date boxes, same height as the selects beside them. */
+.vault-daterange { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+.vault-date { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: #fff; color: var(--text-primary); }
+.vault-date:focus { outline: none; border-color: var(--primary); }
 .vault-select:focus { outline: none; border-color: var(--primary); }
 
 .vault-picker { position: relative; }
