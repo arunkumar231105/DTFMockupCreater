@@ -176,6 +176,14 @@ function enrichCustomersFromCrm($body) {
     }
     unset($c);
 
+    // Only customers that are CRM leads are offered (owner's call). Their files
+    // stay reachable through "All customers" and search. If the lookup matched
+    // nothing at all, something is wrong with it — keep the full list rather
+    // than hand the designer an empty picker.
+    if ($crm) {
+        $customers = array_values(array_filter($customers, fn($c) => !empty($c['lead_no'])));
+    }
+
     // Newest CRM lead first, like the Leads page; unmatched folders after, by name.
     usort($customers, function ($a, $b) {
         $ta = $a['crm_created_at'] ?? null; $tb = $b['crm_created_at'] ?? null;
