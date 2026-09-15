@@ -148,7 +148,12 @@ function enrichCustomersFromCrm($body) {
         );
         $stmt = $pdo->prepare(
             "SELECT DISTINCT ON (k.key) k.key, x.legacy_id, x.created_at,
-                    COALESCE(NULLIF(x.extra->>'name', ''), NULLIF(cv.extra->>'name', ''), NULLIF(cu.full_name, '')) AS name
+                    COALESCE(NULLIF(x.extra->>'name', ''), NULLIF(cv.extra->>'name', ''), NULLIF(cu.full_name, '')) AS name,
+                    -- CRM 360 = the CRM chat is tagged 'converted' (same rule as the CRM sidebar)
+                    (COALESCE(cv.extra->'tags', '[]'::jsonb) @> '[\"converted\"]'::jsonb)::int AS converted,
+                    -- Lead Date & Time exactly as the CRM Leads page: first message, else lead creation
+                    CASE WHEN cv.extra->>'first_ts' ~ '^[0-9]+$' THEN (cv.extra->>'first_ts')::bigint
+                         ELSE (extract(epoch FROM x.created_at) * 1000)::bigint END AS lead_ts
                FROM unnest(?::text[]) AS k(key)
                LEFT JOIN public.customers pc
                       ON pc.id = CASE WHEN k.key LIKE 'c:%' THEN substr(k.key, 3)::uuid END
@@ -172,7 +177,8 @@ function enrichCustomersFromCrm($body) {
         $digits = preg_replace('/\D/', '', $hit['legacy_id']);
         $c['lead_no'] = 'LD-' . (substr($digits, -6) ?: '000000');
         if (!empty($hit['name'])) $c['name'] = $hit['name'];
-        $c['crm_created_at'] = $hit['created_at'];
+        $c['crm_group'] = (int) $hit['converted'] ? 'crm360' : 'lms';
+        $c['lead_ts'] = (int) $hit['lead_ts'];
     }
     unset($c);
 
@@ -184,11 +190,10 @@ function enrichCustomersFromCrm($body) {
         $customers = array_values(array_filter($customers, fn($c) => !empty($c['lead_no'])));
     }
 
-    // Newest CRM lead first, like the Leads page; unmatched folders after, by name.
+    // Newest Lead Date & Time first, like the Leads page; unmatched after, by name.
     usort($customers, function ($a, $b) {
-        $ta = $a['crm_created_at'] ?? null; $tb = $b['crm_created_at'] ?? null;
-        if ($ta && $tb) return strcmp($tb, $ta);
-        if ($ta || $tb) return $ta ? -1 : 1;
+        $ta = $a['lead_ts'] ?? 0; $tb = $b['lead_ts'] ?? 0;
+        if ($ta || $tb) return $tb <=> $ta;
         return strcasecmp($a['name'] ?? '', $b['name'] ?? '');
     });
     $payload['data']['customers'] = $customers;

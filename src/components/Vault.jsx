@@ -97,10 +97,22 @@ function blobToDataUrl(blob) {
   });
 }
 
-// A searchable picker — 400+ customers is far too many for a row of tabs.
+// Lead Date & Time the way the CRM Leads page prints it.
+const fmtLeadTime = (ts) => ts
+  ? new Date(Number(ts)).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Karachi' })
+  : '';
+
+const CRM_GROUPS = [
+  { key: 'lms', label: 'LMS' },          // leads still being worked in the CRM inbox
+  { key: 'crm360', label: 'CRM 360' },   // converted customers (tagged 'converted' in the CRM)
+];
+
+// Two dropdowns, as in the CRM: first the section (LMS / CRM 360), then the
+// customer — CRM lead number, name, and lead date & time, newest first.
 function CustomerPicker({ customers, value, onChange }) {
   const [open, setOpen] = useState(false);
   const [term, setTerm] = useState('');
+  const [group, setGroup] = useState('lms');
   const boxRef = useRef(null);
 
   useEffect(() => {
@@ -111,15 +123,36 @@ function CustomerPicker({ customers, value, onChange }) {
   }, [open]);
 
   const selected = customers.find(c => c.key === value);
-  // The list is already scoped to the selected source by the server, so every
-  // entry here is reachable — it is never truncated.
+  // A customer chosen from elsewhere (e.g. a hand-off) opens its own section.
+  useEffect(() => {
+    if (selected?.crm_group && selected.crm_group !== group) setGroup(selected.crm_group);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.key]);
+
+  // Customers without a section (lookup unavailable) stay visible in both.
+  const inGroup = useMemo(
+    () => customers.filter(c => !c.crm_group || c.crm_group === group)
+      .sort((a, b) => (Number(b.lead_ts) || 0) - (Number(a.lead_ts) || 0)),
+    [customers, group],
+  );
+  const countOf = (key) => customers.filter(c => !c.crm_group || c.crm_group === key).length;
+
   const matches = useMemo(() => {
     const needle = term.trim().toLowerCase();
-    if (!needle) return customers;
-    return customers.filter(c => `${c.name || ''} ${c.reference || ''} ${c.lead_no || ''}`.toLowerCase().includes(needle));
-  }, [customers, term]);
+    if (!needle) return inGroup;
+    return inGroup.filter(c => `${c.name || ''} ${c.reference || ''} ${c.lead_no || ''}`.toLowerCase().includes(needle));
+  }, [inGroup, term]);
+
+  const chooseGroup = (next) => {
+    setGroup(next);
+    if (selected?.crm_group && selected.crm_group !== next) onChange('');
+  };
 
   return (
+    <>
+    <select className="vault-select vault-picker-group" value={group} onChange={(e) => chooseGroup(e.target.value)} aria-label="CRM section">
+      {CRM_GROUPS.map(g => <option key={g.key} value={g.key}>{g.label} ({countOf(g.key)})</option>)}
+    </select>
     <div className="vault-picker" ref={boxRef}>
       <button type="button" className={`vault-picker-btn ${value ? 'is-set' : ''}`} onClick={() => { setOpen(o => !o); setTerm(''); }}>
         <span className="vault-picker-label">Customer</span>
@@ -133,7 +166,7 @@ function CustomerPicker({ customers, value, onChange }) {
           <input
             className="vault-picker-search"
             autoFocus
-            placeholder={`Search ${customers.length} customers…`}
+            placeholder={`Search ${inGroup.length} ${group === 'crm360' ? 'CRM 360' : 'LMS'} customers…`}
             value={term}
             onChange={(e) => setTerm(e.target.value)}
           />
@@ -147,17 +180,21 @@ function CustomerPicker({ customers, value, onChange }) {
               <li key={customer.key}>
                 <button type="button" className={value === customer.key ? 'active' : ''} onClick={() => { onChange(customer.key); setOpen(false); }}>
                   {customer.lead_no && <span className="vault-picker-lead">{customer.lead_no}</span>}
-                  <span className="vault-picker-name">{customer.name}</span>
-                  {customer.reference && <span className="vault-picker-ref">{customer.reference}</span>}
+                  <span className="vault-picker-main">
+                    <span className="vault-picker-name">{customer.name}</span>
+                    {customer.lead_ts ? <span className="vault-picker-date">{fmtLeadTime(customer.lead_ts)}</span> : null}
+                  </span>
+                  {!customer.lead_no && customer.reference && <span className="vault-picker-ref">{customer.reference}</span>}
                   <span className="vault-picker-count">{customer.files}</span>
                 </button>
               </li>
             ))}
-            {!matches.length && <li className="vault-picker-none">No customer matches “{term}”</li>}
+            {!matches.length && <li className="vault-picker-none">{term ? `No customer matches “${term}”` : 'No customers in this section'}</li>}
           </ul>
         </div>
       )}
     </div>
+    </>
   );
 }
 
