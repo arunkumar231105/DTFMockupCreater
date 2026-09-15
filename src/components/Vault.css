@@ -38,7 +38,8 @@
 .vault-picker-btn { display: flex; align-items: center; gap: 8px; padding: 6px 12px; min-width: 220px; border: 1px solid var(--border); background: #fff; border-radius: 8px; cursor: pointer; text-align: left; font-size: 13px; }
 .vault-picker-btn.is-set { border-color: var(--primary); background: var(--primary-light); }
 .vault-picker-label { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary); }
-.vault-picker-value { flex: 1; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+.vault-picker-value { flex: 1; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+.vault-picker-value b { font-weight: 600; color: var(--primary); margin-right: 6px; font-variant-numeric: tabular-nums; }
 .vault-picker-caret { color: var(--text-secondary); font-size: 11px; }
 
 .vault-picker-panel { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; width: 340px; background: #fff; border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 32px rgba(15, 23, 42, .16); overflow: hidden; }
@@ -50,6 +51,9 @@
 .vault-picker-list button.active { background: var(--primary); color: #fff; }
 .vault-picker-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vault-picker-ref { font-size: 11px; opacity: .7; }
+/* CRM lead number, shown first — the same LD-###### the CRM Leads page uses. */
+.vault-picker-lead { flex: 0 0 76px; font-size: 11px; font-weight: 600; color: var(--primary); font-variant-numeric: tabular-nums; }
+.vault-picker-list button.active .vault-picker-lead { color: #fff; }
 .vault-picker-count { font-size: 11px; opacity: .7; font-variant-numeric: tabular-nums; }
 .vault-picker-none { padding: 14px 12px; font-size: 12px; color: var(--text-secondary); }
 

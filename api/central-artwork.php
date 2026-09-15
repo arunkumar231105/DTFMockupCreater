@@ -110,7 +110,82 @@ function proxyVaultGet($backend, $path, array $drop = [], $binary = false) {
 
 // ── Vault-scope endpoints ───────────────────────────────────────────────────
 if ($action === 'vault')    proxyVaultGet($backend, '/artworks/studio/vault');
-if ($action === 'facets')   proxyVaultGet($backend, '/artworks/studio/vault/facets');
+if ($action === 'facets') {
+    // Show each customer the way the CRM shows its leads: the CRM's own name and
+    // lead number (LD-######), newest lead first. PrintShop's leads are copies
+    // of CRM leads numbered "CRM-fb-<psid>"; the CRM keys the same lead as
+    // "fb:<psid>". Anything that can't be matched keeps what PrintShop sent,
+    // and if the lookup fails for any reason the response goes out untouched.
+    ob_start(function ($body) {
+        if (http_response_code() !== 200) return $body;
+        try {
+            return enrichCustomersFromCrm($body);
+        } catch (Throwable $e) {
+            error_log('[vault facets] CRM names skipped: ' . $e->getMessage());
+            return $body;
+        }
+    });
+    proxyVaultGet($backend, '/artworks/studio/vault/facets');
+}
+
+function enrichCustomersFromCrm($body) {
+    $payload = json_decode($body, true);
+    $customers = $payload['data']['customers'] ?? null;
+    if (!is_array($customers) || !$customers) return $body;
+
+    $keys = [];
+    foreach ($customers as $c) {
+        if (preg_match('/^[cl]:[0-9a-f-]{36}$/i', $c['key'] ?? '')) $keys[] = $c['key'];
+    }
+    $crm = [];
+    if ($keys) {
+        $url = parse_url(getenv('DATABASE_URL') ?: '');
+        if (!$url || empty($url['host'])) return $body;
+        $pdo = new PDO(
+            sprintf('pgsql:host=%s;port=%d;dbname=%s', $url['host'], $url['port'] ?? 5432, ltrim($url['path'] ?? '', '/')),
+            urldecode($url['user'] ?? ''), urldecode($url['pass'] ?? ''),
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::ATTR_TIMEOUT => 5]
+        );
+        $stmt = $pdo->prepare(
+            "SELECT DISTINCT ON (k.key) k.key, x.legacy_id, x.created_at,
+                    COALESCE(NULLIF(x.extra->>'name', ''), NULLIF(cv.extra->>'name', ''), NULLIF(cu.full_name, '')) AS name
+               FROM unnest(?::text[]) AS k(key)
+               LEFT JOIN public.customers pc
+                      ON pc.id = CASE WHEN k.key LIKE 'c:%' THEN substr(k.key, 3)::uuid END
+               JOIN public.leads pl
+                      ON pl.id = COALESCE(pc.lead_id, CASE WHEN k.key LIKE 'l:%' THEN substr(k.key, 3)::uuid END)
+               JOIN app.leads x
+                      ON pl.lead_number LIKE 'CRM-%'
+                     AND x.legacy_id = split_part(pl.lead_number, '-', 2) || ':' || split_part(pl.lead_number, '-', 3)
+               LEFT JOIN app.conversations cv ON cv.legacy_id = x.legacy_id
+               LEFT JOIN app.customers cu ON cu.customer_id = x.customer_id
+              ORDER BY k.key, x.created_at DESC"
+        );
+        $stmt->execute(['{' . implode(',', $keys) . '}']);
+        foreach ($stmt->fetchAll() as $row) $crm[$row['key']] = $row;
+    }
+
+    foreach ($customers as &$c) {
+        $hit = $crm[$c['key'] ?? ''] ?? null;
+        if (!$hit) continue;
+        // Same number the CRM Leads page prints: LD- + last six digits of its id.
+        $digits = preg_replace('/\D/', '', $hit['legacy_id']);
+        $c['lead_no'] = 'LD-' . (substr($digits, -6) ?: '000000');
+        if (!empty($hit['name'])) $c['name'] = $hit['name'];
+        $c['crm_created_at'] = $hit['created_at'];
+    }
+    unset($c);
+
+    // Newest CRM lead first, like the Leads page; unmatched folders after, by name.
+    usort($customers, function ($a, $b) {
+        $ta = $a['crm_created_at'] ?? null; $tb = $b['crm_created_at'] ?? null;
+        if ($ta && $tb) return strcmp($tb, $ta);
+        if ($ta || $tb) return $ta ? -1 : 1;
+        return strcasecmp($a['name'] ?? '', $b['name'] ?? '');
+    });
+    $payload['data']['customers'] = $customers;
+    return json_encode($payload);
+}
 if ($action === 'revision') proxyVaultGet($backend, '/artworks/studio/vault/revision');
 if ($action === 'thumb')    proxyVaultGet($backend, '/artworks/studio/thumb', ['v'], true);
 if ($action === 'handoff')  proxyVaultGet($backend, '/artworks/studio/handoff');

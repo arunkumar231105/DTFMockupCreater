@@ -116,14 +116,16 @@ function CustomerPicker({ customers, value, onChange }) {
   const matches = useMemo(() => {
     const needle = term.trim().toLowerCase();
     if (!needle) return customers;
-    return customers.filter(c => (c.name || '').toLowerCase().includes(needle) || (c.reference || '').toLowerCase().includes(needle));
+    return customers.filter(c => `${c.name || ''} ${c.reference || ''} ${c.lead_no || ''}`.toLowerCase().includes(needle));
   }, [customers, term]);
 
   return (
     <div className="vault-picker" ref={boxRef}>
       <button type="button" className={`vault-picker-btn ${value ? 'is-set' : ''}`} onClick={() => { setOpen(o => !o); setTerm(''); }}>
         <span className="vault-picker-label">Customer</span>
-        <span className="vault-picker-value">{selected ? selected.name : 'All customers'}</span>
+        <span className="vault-picker-value">
+          {selected ? <>{selected.lead_no && <b>{selected.lead_no}</b>}{selected.name}</> : 'All customers'}
+        </span>
         <span className="vault-picker-caret">▾</span>
       </button>
       {open && (
@@ -144,6 +146,7 @@ function CustomerPicker({ customers, value, onChange }) {
             {matches.map(customer => (
               <li key={customer.key}>
                 <button type="button" className={value === customer.key ? 'active' : ''} onClick={() => { onChange(customer.key); setOpen(false); }}>
+                  {customer.lead_no && <span className="vault-picker-lead">{customer.lead_no}</span>}
                   <span className="vault-picker-name">{customer.name}</span>
                   {customer.reference && <span className="vault-picker-ref">{customer.reference}</span>}
                   <span className="vault-picker-count">{customer.files}</span>
@@ -660,23 +663,9 @@ function Vault({ onOpenAsset, onSendToTasks }) {
         </div>
       </div>
 
-      <div className="vault-tabs">
-        <button type="button" className={!folder ? 'active' : ''} onClick={() => { setFolder(''); setPage(1); }}>
-          All folders <span>{total}</span>
-        </button>
-        {/* Empty folders stay on the strip: a customer's Mockups folder exists
-            in Nextcloud whether or not anything has been put in it yet. */}
-        {facets.folders.map(item => (
-          <button
-            key={item.key}
-            type="button"
-            className={`${folder === item.key ? 'active' : ''} ${item.files ? '' : 'is-empty'}`}
-            onClick={() => { setFolder(item.key); setPage(1); }}
-          >
-            {item.key} <span>{item.files}</span>
-          </button>
-        ))}
-      </div>
+      {/* The folder chip strip is gone: across every customer it listed dozens of
+          order folders (ORD01-…) and pushed the files off the screen. The folder
+          still shows on each row, and the stage filter covers the real use. */}
 
       {error && <div className="vault-error">{error}</div>}
 
