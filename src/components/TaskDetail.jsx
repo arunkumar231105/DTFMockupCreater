@@ -6,6 +6,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { taskApi, initials } from '../utils/taskApi';
 import TaskVoiceRecorder from './TaskVoiceRecorder';
+import TaskVaultUpload from './TaskVaultUpload';
 
 const TABS = ['Details', 'Artwork', 'Checklist', 'Files', 'Comments', 'Activity'];
 
@@ -399,6 +400,9 @@ function TaskDetail({ taskId, currentUser, onBack, onOpenArtwork, thumbUrlFor, o
 
           {tab === 'Files' && (
             <div className="tm-stack">
+              {/* Vault me file — Vault ke Upload Artwork jaisa: type (REF/SRC/WRK/FNL/FNLA) aur
+                  WRK/FNL ke liye kis design ki hai. Task ke Artwork tab me bhi jud jaati hai. */}
+              <TaskVaultUpload task={task} onChanged={load} />
               <div>
                 <input
                   ref={fileRef}
@@ -408,9 +412,9 @@ function TaskDetail({ taskId, currentUser, onBack, onOpenArtwork, thumbUrlFor, o
                   onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; doUpload(f); }}
                 />
                 <button type="button" className="tm-btn tm-btn-primary" disabled={uploading} onClick={() => fileRef.current?.click()}>
-                  ↑ {uploading ? 'Uploading…' : 'Attach a file'}
+                  ↑ {uploading ? 'Uploading…' : 'Attach to task only'}
                 </button>
-                <span className="tm-muted tm-inline-hint">Image, PDF, AI, PSD… up to 25 MB</span>
+                <span className="tm-muted tm-inline-hint">Kept on the task, not saved to the vault · up to 25 MB</span>
               </div>
               {task.files?.length ? (
                 <ul className="tm-file-list">

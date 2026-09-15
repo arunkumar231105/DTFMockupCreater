@@ -32,6 +32,17 @@
 .vault-search:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
 
 .vault-select { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: #fff; cursor: pointer; }
+/* Task → Files: "Save a file to the vault" — the Vault's upload form, laid out inline. */
+.tm-vault-upload { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+.tm-vault-upload-title { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.tm-vault-upload-sub { margin: -8px 0 0; }
+.tm-vault-upload .vault-upload-dropzone { padding: 18px; }
+.tm-vault-upload-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.tm-vault-upload-foot b { color: var(--text-primary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.tm-vault-this { font-style: normal; font-weight: 600; color: var(--primary); }
+.tm-vault-ok { margin: 0; padding: 8px 10px; border-radius: 8px; background: #ecfdf5; color: #047857; font-size: 12px; }
+.tm-vault-err { margin: 0; padding: 8px 10px; border-radius: 8px; background: #fef2f2; color: #b91c1c; font-size: 12px; }
+
 /* Custom date range: two native date boxes, same height as the selects beside them. */
 .vault-daterange { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
 .vault-date { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: #fff; color: var(--text-primary); }
