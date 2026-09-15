@@ -158,7 +158,13 @@ function enrichCustomersFromCrm($body) {
                LEFT JOIN public.customers pc
                       ON pc.id = CASE WHEN k.key LIKE 'c:%' THEN substr(k.key, 3)::uuid END
                JOIN public.leads pl
-                      ON pl.id = COALESCE(pc.lead_id, CASE WHEN k.key LIKE 'l:%' THEN substr(k.key, 3)::uuid END)
+                      -- A PrintShop customer row often has no lead_id even though its
+                      -- files carry one (41 of 76 converted customers), so fall back to that.
+                      ON pl.id = COALESCE(
+                           pc.lead_id,
+                           (SELECT a2.lead_id FROM public.artwork_vault_assets a2
+                             WHERE a2.customer_id = pc.id AND a2.lead_id IS NOT NULL LIMIT 1),
+                           CASE WHEN k.key LIKE 'l:%' THEN substr(k.key, 3)::uuid END)
                JOIN app.leads x
                       ON pl.lead_number LIKE 'CRM-%'
                      AND x.legacy_id = split_part(pl.lead_number, '-', 2) || ':' || split_part(pl.lead_number, '-', 3)
@@ -188,6 +194,16 @@ function enrichCustomersFromCrm($body) {
     // than hand the designer an empty picker.
     if ($crm) {
         $customers = array_values(array_filter($customers, fn($c) => !empty($c['lead_no'])));
+
+        // One CRM customer can sit under two PrintShop records (a lead and a
+        // customer row). List them once, as the record holding most files;
+        // the other record's files stay in "All customers" and search.
+        $byLead = [];
+        foreach ($customers as $c) {
+            $id = $c['lead_no'] . '|' . $c['name'];
+            if (!isset($byLead[$id]) || (int) $c['files'] > (int) $byLead[$id]['files']) $byLead[$id] = $c;
+        }
+        $customers = array_values($byLead);
     }
 
     // Newest Lead Date & Time first, like the Leads page; unmatched after, by name.
