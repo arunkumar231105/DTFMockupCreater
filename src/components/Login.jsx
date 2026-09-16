@@ -41,7 +41,7 @@ function Login({ onLogin }) {
             <rect width="24" height="24" rx="6" fill="#2563eb" />
             <path d="M7 8h10M7 12h10M7 16h6" stroke="white" strokeWidth="2" strokeLinecap="round" />
           </svg>
-          <h1>PrintShop</h1>
+          <h1>Design Studio</h1>
         </div>
         <p className="login-subtitle">Sign in to your account</p>
         {error && <div className="login-error">{error}</div>}

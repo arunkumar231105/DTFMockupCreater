@@ -4,6 +4,7 @@ import './UserManagement.css';
 
 const ALL_PAGES = [
   { id: 'vault', label: 'Vault' },
+  { id: 'gallery', label: 'Gallery' },
   { id: 'bgremover', label: 'Artwork Editor' },
   { id: 'mockupv2', label: 'Mockup Preview' },
   { id: 'garments', label: 'Garment Manager' },

@@ -16,6 +16,7 @@ import GarmentTypes from './components/GarmentTypes';
 import BatchProcessor from './components/BatchProcessor';
 import MockupEngineV2 from './components/MockupEngineV2';
 import Vault from './components/Vault';
+import Gallery from './components/Gallery';
 import TaskManager from './components/TaskManager';
 import GangSheetCalculator from './components/GangSheetCalculator';
 import GangSheetOptimizer from './components/GangSheetOptimizer';
@@ -403,7 +404,7 @@ function App() {
           email: 'dev@localhost',
           full_name: 'Local Developer',
           role: 'superadmin',
-          page_access: ['vault','bgremover','qa','orders','garments','gangsheet','gscalc','gsoptimize','contrast','ailab','users','mockupv2','batch','garment-types'],
+          page_access: ['vault','gallery','bgremover','qa','orders','garments','gangsheet','gscalc','gsoptimize','contrast','ailab','users','mockupv2','batch','garment-types'],
         };
         if (active) { setAuthUser(devUser); setAuthToken('dev-token'); setAuthLoading(false); }
         return;
@@ -505,7 +506,7 @@ function App() {
   // the editor and the task list used to land on "You don't have access to this
   // page" with a perfectly usable sidebar beside it. Follow the sidebar's own
   // order and open the first page this person is allowed to see.
-  const PAGE_ORDER = ['tasks', 'vault', 'bgremover', 'mockupv2', 'gangsheet', 'garments', 'batch', 'gscalc', 'gsoptimize', 'qa', 'contrast', 'ailab', 'orders', 'garment-types', 'users'];
+  const PAGE_ORDER = ['tasks', 'vault', 'gallery', 'bgremover', 'mockupv2', 'gangsheet', 'garments', 'batch', 'gscalc', 'gsoptimize', 'qa', 'contrast', 'ailab', 'orders', 'garment-types', 'users'];
   useEffect(() => {
     if (!authUser || !authVerified || hasPageAccess(currentPage)) return;
     const landing = PAGE_ORDER.find(hasPageAccess);
@@ -760,6 +761,10 @@ function App() {
           onArtworkChange={setArtwork}
         />
       );
+    }
+
+    if (currentPage === 'gallery') {
+      return <Gallery />;
     }
 
     if (currentPage === 'vault') {

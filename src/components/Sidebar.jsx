@@ -7,6 +7,7 @@ const menuItems = [
   ]},
   { group: 'Pre-Order Process', items: [
     { icon: 'vault', label: 'Vault', page: 'vault' },
+    { icon: 'gallery', label: 'Gallery', page: 'gallery' },
     { icon: 'bgremover', label: 'Artwork Editor', page: 'bgremover' },
     { icon: 'mockupv2', label: 'Mockup Preview', page: 'mockupv2' },
     { icon: 'garments', label: 'Garment Manager', page: 'garments' },
@@ -37,7 +38,7 @@ function Sidebar({ currentPage, onPageChange, authUser, onLogout, hasPageAccess 
           <rect width="24" height="24" rx="6" fill="#2563eb" />
           <path d="M7 8h10M7 12h10M7 16h6" stroke="white" strokeWidth="2" strokeLinecap="round" />
         </svg>
-        <span className="logo-text">PrintShop</span>
+        <span className="logo-text">Design Studio</span>
       </div>
 
       <nav className="sidebar-nav">
@@ -88,6 +89,13 @@ function MenuIcon({ name }) {
         <rect x="3" y="3" width="18" height="18" rx="2" />
         <path d="M3 9h18" />
         <path d="M9 21V9" />
+      </svg>
+    ),
+    gallery: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <circle cx="8.5" cy="8.5" r="1.5" />
+        <path d="M21 15l-5-5L5 21" />
       </svg>
     ),
     dashboard: (
