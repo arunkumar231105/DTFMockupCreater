@@ -441,6 +441,29 @@ function deriveOne(PDO $db, $id, $actor) {
     }
 }
 
+// The vault's watcher polls Nextcloud for recently changed files every few seconds.
+// When it lists a new file just before the gallery moves it, it writes a row for
+// the old path a moment later. Rows left at a path the gallery moved a file away
+// from in the last quarter hour are removed once Nextcloud confirms nothing is there.
+function reapStaleRows(PDO $db) {
+    $st = $db->query("SELECT DISTINCT a.id, a.path
+        FROM gallery.marks m
+        JOIN public.artwork_vault_assets a ON a.source = 'nextcloud' AND a.source_key = m.from_path
+        WHERE m.status = 'done' AND m.marked_at > NOW() - INTERVAL '15 minutes'
+          AND m.to_path IS DISTINCT FROM m.from_path AND m.to_mark <> 'DUPLICATE'
+        LIMIT 50");
+    $removed = 0;
+    foreach ($st->fetchAll() as $row) {
+        try {
+            [$status] = ncRequest('PROPFIND', $row['path'], ['Depth: 0'], null, 20);
+            if ($status !== 404) continue;
+            $removed += $db->prepare("DELETE FROM public.artwork_vault_assets WHERE id = CAST(:id AS uuid)")
+                ->execute([':id' => $row['id']]) ? 1 : 0;
+        } catch (Throwable $e) { /* try again on the next call */ }
+    }
+    return $removed;
+}
+
 // ── Routes ─────────────────────────────────────────────────────────────────────
 try {
     if ($action === 'mark') {
@@ -530,6 +553,7 @@ try {
     }
 
     if ($action === 'summary') {
+        reapStaleRows($db);
         $ids = array_slice(array_filter(explode(',', $_GET['ids'] ?? ''), 'isUuid'), 0, 300);
         if (!$ids) respond([]);
         $arr = uuidArray($ids);

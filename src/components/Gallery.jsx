@@ -279,6 +279,7 @@ export default function Gallery() {
       }
       setSelection(new Set());
       await load();
+      settleLater();
     } catch (e) {
       setToast({ ok: false, text: e.message });
     } finally {
@@ -286,12 +287,22 @@ export default function Gallery() {
     }
   };
 
+  // The vault picks up moved files a few seconds after the fact; look once more
+  // after it has, so the grid never keeps showing a file at its old place.
+  const settleTimer = useRef(null);
+  const settleLater = () => {
+    clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => { load(); }, 9000);
+  };
+  useEffect(() => () => clearTimeout(settleTimer.current), []);
+
   const derive = async (asset) => {
     setBusy('derive');
     try {
       const r = await post('derive', { id: asset.id });
       setToast({ ok: true, text: `New source ${r.file_name} created from ${asset.file_name}` });
       await load();
+      settleLater();
       loadHistory(asset.id);
     } catch (e) {
       setToast({ ok: false, text: e.message });
