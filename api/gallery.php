@@ -238,6 +238,15 @@ function loadAsset(PDO $db, $id, $forUpdate = false) {
     return $st->fetch() ?: null;
 }
 
+// Same rules the vault indexer applies: only an approved final (or a gang sheet) is
+// production-ready, and a numbered stage (…-WRK02) carries its version in the name.
+function productionReady($life) {
+    return in_array($life, ['FNLA', 'GS'], true) ? 'true' : 'false';
+}
+function versionFromName($name) {
+    return preg_match('/-(?:SRC|REF|WRK|FNLA|FNL|DOC)([0-9]{1,3})(?:[^0-9]|$)/i', $name, $m) ? max(1, (int)$m[1]) : 1;
+}
+
 function recordMark(PDO $db, array $a, array $f) {
     $st = $db->prepare("INSERT INTO gallery.marks
         (asset_id, new_asset_id, customer_key, customer_name, artwork_code, from_mark, to_mark,
@@ -264,11 +273,13 @@ function repointRow(PDO $db, array $a, array $fields) {
         $st = $db->prepare("UPDATE public.artwork_vault_assets
             SET path = :path, source_key = :key, parent_path = :parent, file_name = :name,
                 artwork_code = :code, lifecycle_code = :life, asset_type = :type, status = :status,
+                production_ready = :ready, version_no = :version,
                 naming_convention_valid = TRUE, source_modified_at = NOW(), updated_at = NOW()
             WHERE id = CAST(:id AS uuid)");
         $st->execute([':path' => $fields['path'], ':key' => $fields['path'], ':parent' => $fields['parent'],
                       ':name' => $fields['name'], ':code' => $fields['code'], ':life' => $fields['life'],
-                      ':type' => $fields['type'], ':status' => $fields['status'], ':id' => $a['id']]);
+                      ':type' => $fields['type'], ':status' => $fields['status'],
+                      ':ready' => productionReady($fields['life']), ':version' => versionFromName($fields['name']), ':id' => $a['id']]);
         $db->exec('RELEASE SAVEPOINT gallery_repoint');
         return $a['id'];
     } catch (PDOException $e) {
@@ -280,9 +291,11 @@ function repointRow(PDO $db, array $a, array $fields) {
         $db->prepare("DELETE FROM public.artwork_vault_assets WHERE id = CAST(:id AS uuid)")->execute([':id' => $a['id']]);
         $db->prepare("UPDATE public.artwork_vault_assets
             SET artwork_code = :code, lifecycle_code = :life, asset_type = :type, status = :status,
+                production_ready = :ready, version_no = :version,
                 naming_convention_valid = TRUE, updated_at = NOW() WHERE id = CAST(:id AS uuid)")
            ->execute([':code' => $fields['code'], ':life' => $fields['life'], ':type' => $fields['type'],
-                      ':status' => $fields['status'], ':id' => $other]);
+                      ':status' => $fields['status'], ':ready' => productionReady($fields['life']),
+                      ':version' => versionFromName($fields['name']), ':id' => $other]);
         return $other;
     }
 }
@@ -409,7 +422,7 @@ function deriveOne(PDO $db, $id, $actor) {
              lead_id, customer_id, order_id, sales_agent_id, designer_id, sender_name,
              source_modified_at, last_seen_at, updated_at)
             VALUES ('nextcloud', :key, :path, :parent, :name, :mime, :size, 'reference',
-                    :code, 'SRC', TRUE, 'Source Received', 0,
+                    :code, 'SRC', TRUE, 'Source Received', 1,
                     CAST(:lead AS uuid), CAST(:cust AS uuid), CAST(:ord AS uuid), CAST(:agent AS uuid), CAST(:designer AS uuid), :sender,
                     NOW(), NOW(), NOW())
             ON CONFLICT (source, source_key) DO UPDATE
