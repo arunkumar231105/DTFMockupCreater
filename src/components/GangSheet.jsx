@@ -178,19 +178,22 @@ function GangSheet({ sharedArtwork, onRegisterExport }) {
         const canvas = await renderSheetCanvas(sheet, i);
         if (!canvas) continue;
         const raw = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-        if (raw) sheets.push(await embedDpiInPng(raw, DPI));
+        // Same size the Download button puts in its name: 22 wide x printed length.
+        const sheetH = Math.ceil(sheet.totalHeight + (includeHeader ? 1.2 + headerTopMargin : 0));
+        if (raw) sheets.push({ blob: await embedDpiInPng(raw, DPI), size: `${SHEET_WIDTH_INCHES}x${sheetH}` });
       }
       if (!sheets.length) throw new Error('The gang sheet is empty — nothing to save.');
 
       const savedPaths = [];
       let artworkCode = '';
-      for (const [index, blob] of sheets.entries()) {
+      for (const [index, { blob, size }] of sheets.entries()) {
         setIntegrationMessage(`Saving sheet ${index + 1} of ${sheets.length} to Nextcloud…`);
         const form = new FormData();
         Object.entries(context).forEach(([key, value]) => { if (value) form.append(key, value); });
         if (artworkCode) form.append('artwork_code', artworkCode);
         form.append('sheet_no', String(index + 1));
         form.append('sheet_count', String(sheets.length));
+        form.append('sheet_size', size);
         form.append('file', new File([blob], `gangsheet-${index + 1}.png`, { type: 'image/png' }));
 
         const response = await authFetch(base, '/gangsheet-save.php', { method: 'POST', body: form });

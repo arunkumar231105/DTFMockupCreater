@@ -222,7 +222,7 @@ function nextVersionNumber($db, $code, $kindCode) {
     $stmt = $db->prepare("SELECT COALESCE(MAX(COALESCE(NULLIF(substring(file_name from ?), '')::int, 1)), 0) AS highest
                           FROM public.artwork_vault_assets
                           WHERE source = 'nextcloud' AND file_name ~ ?");
-    $stmt->execute(["^{$prefix}([0-9]+)", "^{$prefix}[0-9]*\\."]);
+    $stmt->execute(["^{$prefix}([0-9]+)", "^{$prefix}[0-9]*(-[0-9.]+x[0-9.]+)?\\."]);
     return (int)$stmt->fetch()['highest'] + 1;
 }
 
@@ -246,12 +246,28 @@ if ($bytes === false || $bytes === '') fail(400, 'Gang sheet image could not be 
 $cfg = ncConfig();
 ensureFolder($cfg, $folder);
 
+// The sheet's printed size goes into the name — "22x4" = 22" wide, 4" long — the way
+// the Download button has always named it, so production sees the size at a glance.
+$sheetSize = trim((string)($_POST['sheet_size'] ?? ''));
+if (!preg_match('/^\d{1,3}(\.\d{1,2})?x\d{1,4}(\.\d{1,2})?$/', $sheetSize)) $sheetSize = '';
+
+// With the size in the name, two sheets of one job no longer collide on the same
+// filename, so "taken, try the next version" alone cannot keep versions unique —
+// and the vault index lags a few seconds behind a save. Count what is already in
+// the folder as well.
+function folderHighestVersion($cfg, $folder, $code, $kindCode) {
+    $result = davRequest($cfg, 'PROPFIND', $folder, null, ['Depth: 1']);
+    if ($result['status'] !== 207) return 0;
+    preg_match_all('/' . preg_quote($code . '-' . $kindCode, '/') . '(\d+)/i', $result['body'], $m);
+    return $m[1] ? max(array_map('intval', $m[1])) : 0;
+}
+
 // Claim the name atomically. If another save took it in between, Nextcloud
 // refuses the write with 412 and we move to the next version.
-$version = nextVersionNumber($db, $code, 'GS');
+$version = max(nextVersionNumber($db, $code, 'GS'), folderHighestVersion($cfg, $folder, $code, 'GS') + 1);
 $saved = null;
 for ($attempt = 0; $attempt < 50; $attempt++, $version++) {
-    $fileName = sprintf('%s-GS%02d.%s', $code, $version, $ext);
+    $fileName = sprintf('%s-GS%02d%s.%s', $code, $version, $sheetSize !== '' ? "-{$sheetSize}" : '', $ext);
     $path = $folder . '/' . $fileName;
     $result = davRequest($cfg, 'PUT', $path, $bytes, [
         'Content-Type: ' . $mime,
