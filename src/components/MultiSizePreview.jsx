@@ -334,10 +334,19 @@ const MSPCard = React.forwardRef(function MSPCard({
       const garImgAspect = (tshirtImg.naturalWidth || tshirtImg.width) / (tshirtImg.naturalHeight || tshirtImg.height);
       let dw, dh, dx, dy;
       if (isCustomGarment) {
-        dw = tshirtW;
-        dh = tshirtH;
-        dx = tshirtX;
-        dy = tshirtY;
+        // Fit the garment image inside its mapped body box while keeping the
+        // image's real aspect ratio. Drawing it straight to tshirtW×tshirtH
+        // stretched non-square garments (e.g. a tank top squashed in width).
+        const boxAspect = tshirtW / tshirtH;
+        if (garImgAspect > boxAspect) {
+          dw = tshirtW;
+          dh = tshirtW / garImgAspect;
+        } else {
+          dh = tshirtH;
+          dw = tshirtH * garImgAspect;
+        }
+        dx = tshirtX + (tshirtW - dw) / 2;
+        dy = tshirtY + (tshirtH - dh) / 2;
       } else {
         const shirtPadding = 1.3;
         dw = tshirtW * shirtPadding;
@@ -374,11 +383,24 @@ const MSPCard = React.forwardRef(function MSPCard({
         // Same pxPerInch as the shirt
         const artPxPerInch = pxPerInch;
 
-        // Print area — exact same as DesignCanvas
-        const printAreaPxW = artworkAreaSettings.width * artPxPerInch;
-        const printAreaPxH = artworkAreaSettings.height * artPxPerInch;
+        // Print area. A custom garment (tank top, hoodie, …) carries its own
+        // print-area mapping, because the fixed T-shirt offset of 7" — measured
+        // from the top of the body — lands in the collar of a shorter garment
+        // like a tank top. Fall back to the shared T-shirt settings only when a
+        // garment has no mapping of its own.
+        const taggedG = isCustomGarment
+          ? (customGarment?.bodyMapping ? customGarment
+             : (garmentLibrary && garmentLibrary.find(g => g.size === realSize && (g.side || 'front') === viewSide)))
+          : null;
+        const mapping = taggedG?.bodyMapping;
+        const areaWidth = mapping?.widthInches ?? artworkAreaSettings.width;
+        const areaHeight = mapping?.heightInches ?? artworkAreaSettings.height;
+        const areaTopOffset = mapping?.topOffsetInches ?? artworkAreaSettings.topOffset;
+
+        const printAreaPxW = areaWidth * artPxPerInch;
+        const printAreaPxH = areaHeight * artPxPerInch;
         const printX = tshirtX + (tshirtW - printAreaPxW) / 2;
-        const printY = tshirtY + (artworkAreaSettings.topOffset * artPxPerInch);
+        const printY = tshirtY + (areaTopOffset * artPxPerInch);
 
         // Artwork dimensions — scaled for this size
         const scaledArtW = (sizeData.bodyWidth * activePercent) / 100;
@@ -469,19 +491,36 @@ const MSPCard = React.forwardRef(function MSPCard({
       tshirtY = RH * 0.20 + (maxTshirtH - tshirtH) / 2;
     }
 
-    // Draw garment with tint
+    // Draw garment with tint — fit inside the mapped box at the image's real
+    // aspect ratio (matches the preview; avoids stretching non-square garments).
     let dw, dh, dx, dy;
-    if (isCustomGarment) { dw = tshirtW; dh = tshirtH; dx = tshirtX; dy = tshirtY; }
+    if (isCustomGarment) {
+      const boxAspect = tshirtW / tshirtH;
+      if (garImgAspect > boxAspect) { dw = tshirtW; dh = tshirtW / garImgAspect; }
+      else { dh = tshirtH; dw = tshirtH * garImgAspect; }
+      dx = tshirtX + (tshirtW - dw) / 2;
+      dy = tshirtY + (tshirtH - dh) / 2;
+    }
     else { const sp = 1.3; dw = tshirtW * sp; dh = dw / garImgAspect; dx = (RW - dw) / 2; dy = tshirtY - (dh - tshirtH) * 0.15; }
     drawRecoloredGarment(rCtx, garmentImg, dx, dy, dw, dh, selectedColor.hex, RW, RH);
 
     // Helper to draw one artwork at high-res
     const drawOneHiRes = (img, dims, pos, opacity = 1) => {
       const artPxPerInch = pxPerInch;
-      const printAreaPxW = artworkAreaSettings.width * artPxPerInch;
-      const printAreaPxH = artworkAreaSettings.height * artPxPerInch;
+      // Match the preview: a custom garment uses its own print-area mapping so
+      // the export lands the artwork in the same place the card shows it.
+      const taggedG = isCustomGarment
+        ? (customGarment?.bodyMapping ? customGarment
+           : (garmentLibrary && garmentLibrary.find(g => g.size === realSize && (g.side || 'front') === viewSide)))
+        : null;
+      const mapping = taggedG?.bodyMapping;
+      const areaWidth = mapping?.widthInches ?? artworkAreaSettings.width;
+      const areaHeight = mapping?.heightInches ?? artworkAreaSettings.height;
+      const areaTopOffset = mapping?.topOffsetInches ?? artworkAreaSettings.topOffset;
+      const printAreaPxW = areaWidth * artPxPerInch;
+      const printAreaPxH = areaHeight * artPxPerInch;
       const printX = tshirtX + (tshirtW - printAreaPxW) / 2;
-      const printY = tshirtY + (artworkAreaSettings.topOffset * artPxPerInch);
+      const printY = tshirtY + (areaTopOffset * artPxPerInch);
 
       // Scale artwork dimensions for this size
       const scaledArtW = (sizeData.bodyWidth * activePercent) / 100;
