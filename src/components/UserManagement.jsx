@@ -16,7 +16,9 @@ const ALL_PAGES = [
   { id: 'contrast', label: 'Contrast Checker' },
   { id: 'ailab', label: 'AI Artwork Lab' },
   { id: 'tasks', label: 'Task Manager' },
+  { id: 'apijobs', label: 'Design Jobs (approvals)' },
   { id: 'users', label: 'User Management' },
+  { id: 'apiapps', label: 'API Apps' },
 ];
 
 const ROLES = ['superadmin', 'admin', 'editor', 'viewer'];

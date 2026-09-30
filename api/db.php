@@ -98,6 +98,34 @@ function initDatabase() {
     )");
     $db->exec("CREATE INDEX IF NOT EXISTS ix_dtf_gang_sheet_artworks_sheet ON gang_sheet_artworks(gang_sheet_id)");
 
+    // Developer API: apps other systems use for artworks, mockups, gang sheets.
+    // Only the SHA-256 of a secret is kept — the secret itself is shown once.
+    $db->exec("CREATE TABLE IF NOT EXISTS api_apps (
+        id BIGSERIAL PRIMARY KEY,
+        name VARCHAR(120) NOT NULL,
+        api_key VARCHAR(64) NOT NULL UNIQUE,
+        secret_hash CHAR(64) NOT NULL,
+        secret_hint VARCHAR(12) NOT NULL DEFAULT '',
+        scopes TEXT[] NOT NULL DEFAULT ARRAY['artwork','mockup','gangsheet','export']::text[],
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_by BIGINT NULL REFERENCES users(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        secret_rotated_at TIMESTAMPTZ NULL,
+        last_used_at TIMESTAMPTZ NULL,
+        request_count BIGINT NOT NULL DEFAULT 0,
+        deleted_at TIMESTAMPTZ NULL
+    )");
+    $db->exec("CREATE TABLE IF NOT EXISTS api_request_log (
+        id BIGSERIAL PRIMARY KEY,
+        app_id BIGINT NOT NULL REFERENCES api_apps(id) ON DELETE CASCADE,
+        endpoint VARCHAR(60) NOT NULL,
+        status INTEGER NOT NULL,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        detail TEXT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )");
+    $db->exec("CREATE INDEX IF NOT EXISTS ix_dtf_api_request_log_app ON api_request_log(app_id, created_at DESC)");
+
     $stmt = $db->query("SELECT COUNT(*) AS cnt FROM users WHERE role = 'superadmin'");
     if ((int)$stmt->fetch()['cnt'] === 0) {
         $hash = password_hash('admin123', PASSWORD_BCRYPT);

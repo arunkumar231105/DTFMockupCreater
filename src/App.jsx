@@ -12,6 +12,9 @@ import GarmentManager from './components/GarmentManager';
 import GangSheet from './components/GangSheet';
 import AIArtworkLab from './components/AIArtworkLab';
 import UserManagement from './components/UserManagement';
+import ApiApps from './components/ApiApps';
+import DesignJobs from './components/DesignJobs';
+import { registerWebMcpTools } from './utils/webmcp';
 import GarmentTypes from './components/GarmentTypes';
 import BatchProcessor from './components/BatchProcessor';
 import MockupEngineV2 from './components/MockupEngineV2';
@@ -502,6 +505,13 @@ function App() {
     return access.includes(page);
   };
 
+  // WebMCP: in-browser AI agents get the production tools for people who may use
+  // the Design Jobs page. The tools act as that person; approving stays manual.
+  useEffect(() => {
+    if (!authUser || !authVerified || !hasPageAccess('apijobs')) return undefined;
+    return registerWebMcpTools();
+  }, [authUser, authVerified]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // The app opens on the Vault, but not everyone has it — a designer who only has
   // the editor and the task list used to land on "You don't have access to this
   // page" with a perfectly usable sidebar beside it. Follow the sidebar's own
@@ -827,6 +837,14 @@ function App() {
           onSendToMockup={sendToMockup}
         />
       );
+    }
+
+    if (currentPage === 'apiapps') {
+      return <ApiApps />;
+    }
+
+    if (currentPage === 'apijobs') {
+      return <DesignJobs />;
     }
 
     if (currentPage === 'users') {

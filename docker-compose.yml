@@ -17,8 +17,37 @@ services:
       - decoinks_central
     restart: unless-stopped
 
+  # Design Studio API (artworks, mockups, gang sheets, jobs, exports, approvals)
+  # and the AI tool endpoint /mcp, for other systems keyed by the apps on the
+  # studio's API Apps page. nginx routes those paths on designstudio.decoinkssuite.com
+  # here, outside the Authentik gate.
+  render-api:
+    build:
+      context: .
+      dockerfile: render-api/Dockerfile
+    ports:
+      - "127.0.0.1:8104:8080"
+    volumes:
+      - garment-data:/garment-data:ro
+      - render-data:/data
+    environment:
+      - PORT=8080
+      - GARMENT_DIR=/garment-data
+      - DATA_DIR=/data
+      - PUBLIC_BASE_URL=https://designstudio.decoinkssuite.com
+      # This host's own public addresses: artwork URLs may never point back at it.
+      - SELF_IPS=31.97.110.197,2a02:4780:59:182f::1
+    env_file:
+      - /root/decoinks/backend/.env
+    mem_limit: 3g
+    networks:
+      - default
+      - decoinks_central
+    restart: unless-stopped
+
 volumes:
   garment-data:
+  render-data:
 
 networks:
   decoinks_central:
